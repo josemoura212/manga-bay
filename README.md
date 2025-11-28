@@ -54,31 +54,24 @@ Em outro terminal, inicie um segundo nó conectando-se ao primeiro.
 cargo run -- --port 3002 --data-dir ./data/node2 --bootstrap-peers /ip4/127.0.0.1/tcp/3001/p2p/<PEER_ID_DO_NODE1>
 ```
 
-### 3. API HTTP
 
-O nó expõe uma API REST para interagir com a biblioteca local.
-
-#### Adicionar um Mangá (Ingestão)
-
-Agora suporta envio de múltiplas páginas (imagens em Base64) e metadados detalhados.
+Retorna o PeerId e os endereços onde o nó está escutando.
 
 ```bash
-curl -X POST http://localhost:3000/mangas \
+curl http://localhost:3000/node
+```
+
+#### Conectar a um Peer
+
+Conecta manualmente a outro nó usando seu Multiaddr (obtido na rota acima do outro nó).
+
+```bash
+curl -X POST http://localhost:3000/peers \
   -H "Content-Type: application/json" \
   -d '{
-    "title": "Capítulo 1",
-    "author": "Eiichiro Oda",
-    "series_code": "OP-001",
-    "series_title": "One Piece",
-    "alternative_titles": ["One Piece (PT-BR)", "ワンピース"],
-    "language": "pt-br",
-    "pages": [
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-    ]
+    "multiaddr": "/ip4/192.168.1.15/tcp/3001"
   }'
 ```
-*(Nota: `pages` é uma lista de strings Base64. O servidor irá criar um arquivo ZIP/CBZ automaticamente.)*
 
 #### Listar Mangás
 

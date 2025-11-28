@@ -10,11 +10,25 @@ use std::time::Duration;
 
 use tokio::select;
 
+use tokio::sync::{mpsc, oneshot};
+
+#[derive(Debug)]
+pub struct NodeInfo {
+    pub peer_id: String,
+    pub listeners: Vec<String>,
+}
+
+#[derive(Debug)]
+pub enum NodeCommand {
+    GetNodeInfo(oneshot::Sender<NodeInfo>),
+    ConnectPeer(Multiaddr, oneshot::Sender<Result<()>>),
+}
+
 pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> Result<()> {
     // 1. Load or Generate Identity
     let id_keys = load_or_generate_keypair(&storage.data_dir).await?;
-    let peer_id = PeerId::from(id_keys.public());
-    tracing::info!("Local PeerId: {peer_id}");
+    let local_peer_id = PeerId::from(id_keys.public());
+    tracing::info!("Local PeerId: {local_peer_id}");
 
     // 4. Build Swarm
     let mut swarm = SwarmBuilder::with_existing_identity(id_keys)
@@ -83,8 +97,11 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
     let resource_manager = crate::node::resources::ResourceManager::new(storage.data_dir.clone());
     resource_manager.start_monitoring().await;
 
+    // Command Channel
+    let (cmd_tx, mut cmd_rx) = mpsc::channel(32);
+
     // 9. Run Loop
-    let api_server = crate::api::server::serve(port, storage.clone());
+    let api_server = crate::api::server::serve(port, storage.clone(), cmd_tx);
     let mut save_interval = tokio::time::interval(Duration::from_secs(60)); // Save peers every minute
 
     select! {
@@ -92,6 +109,22 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
         _ = async {
             loop {
                 select! {
+                    Some(cmd) = cmd_rx.recv() => {
+                        match cmd {
+                            NodeCommand::GetNodeInfo(reply) => {
+                                let listeners: Vec<String> = swarm.listeners().map(|a| a.to_string()).collect();
+                                let info = NodeInfo {
+                                    peer_id: local_peer_id.to_string(),
+                                    listeners,
+                                };
+                                let _ = reply.send(info);
+                            }
+                            NodeCommand::ConnectPeer(addr, reply) => {
+                                let result = swarm.dial(addr).map_err(|e| anyhow::anyhow!(e));
+                                let _ = reply.send(result);
+                            }
+                        }
+                    }
                     _ = save_interval.tick() => {
                         // In a real implementation, we would extract connected peers from the swarm
                         // For now, we just save the initial list + any we might add
