@@ -223,13 +223,39 @@ async fn get_manga(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<crate::storage::models::MangaMetadata>, AppError> {
+    // 1. Try local storage
     match state.storage.get_manga(&id).await {
-        Ok(Some(manga)) => Ok(Json(manga)),
-        Ok(None) => Err(AppError::NotFound("Manga not found".to_string())),
-        Err(e) => {
-            tracing::error!("Failed to get manga: {:?}", e);
-            Err(AppError::InternalServerError(e.to_string()))
+        Ok(Some(manga)) => return Ok(Json(manga)),
+        Ok(None) => {
+            tracing::info!("Manga {} not found locally, querying peers...", id);
         }
+        Err(e) => {
+            tracing::error!("Failed to get manga locally: {:?}", e);
+            return Err(AppError::InternalServerError(e.to_string()));
+        }
+    }
+
+    // 2. Query Peers
+    let (tx, rx) = oneshot::channel();
+    state
+        .cmd_tx
+        .send(NodeCommand::FindManga(id.clone(), tx))
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to send command to node".to_string()))?;
+
+    // Wait for response with timeout
+    match tokio::time::timeout(std::time::Duration::from_secs(5), rx).await {
+        Ok(Ok(Some(manga))) => {
+            // Found in network!
+            // Optionally save to local DB here
+            // For now, just return it
+            Ok(Json(manga))
+        }
+        Ok(Ok(None)) => Err(AppError::NotFound("Manga not found in network".to_string())),
+        Ok(Err(_)) => Err(AppError::InternalServerError(
+            "Failed to receive response from node".to_string(),
+        )),
+        Err(_) => Err(AppError::NotFound("Manga not found (timeout)".to_string())),
     }
 }
 

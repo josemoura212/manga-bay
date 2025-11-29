@@ -22,6 +22,10 @@ pub struct NodeInfo {
 pub enum NodeCommand {
     GetNodeInfo(oneshot::Sender<NodeInfo>),
     ConnectPeer(Multiaddr, oneshot::Sender<Result<()>>),
+    FindManga(
+        String,
+        oneshot::Sender<Option<crate::storage::models::MangaMetadata>>,
+    ),
 }
 
 pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> Result<()> {
@@ -100,6 +104,12 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
     // Command Channel
     let (cmd_tx, mut cmd_rx) = mpsc::channel(32);
 
+    // Pending Requests Map: MangaID -> List of waiters
+    let mut pending_manga_requests: std::collections::HashMap<
+        String,
+        Vec<oneshot::Sender<Option<crate::storage::models::MangaMetadata>>>,
+    > = std::collections::HashMap::new();
+
     // 9. Run Loop
     let api_server = crate::api::server::serve(port, storage.clone(), cmd_tx);
     let mut save_interval = tokio::time::interval(Duration::from_secs(60)); // Save peers every minute
@@ -123,6 +133,32 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                                 let result = swarm.dial(addr).map_err(|e| anyhow::anyhow!(e));
                                 let _ = reply.send(result);
                             }
+                            NodeCommand::FindManga(manga_id, reply) => {
+                                // Add to pending
+                                pending_manga_requests.entry(manga_id.clone()).or_default().push(reply);
+
+                                // Broadcast request to all connected peers (Flood)
+                                // In a real DHT, we would query the DHT.
+                                let peers: Vec<_> = swarm.connected_peers().cloned().collect();
+                                if peers.is_empty() {
+                                    tracing::warn!("No peers connected to search for manga {}", manga_id);
+                                    // Fail immediately if no peers
+                                    if let Some(waiters) = pending_manga_requests.remove(&manga_id) {
+                                        for tx in waiters {
+                                            let _ = tx.send(None);
+                                        }
+                                    }
+                                } else {
+                                    tracing::info!("Querying {} peers for manga {}", peers.len(), manga_id);
+                                    let req = crate::p2p::protocol::AppRequest::GetManga { manga_id: manga_id.clone() };
+                                    for peer in peers {
+                                        swarm.behaviour_mut().request_response.send_request(&peer, req.clone());
+                                    }
+
+                                    // Timeout fallback (simple implementation)
+                                    // Ideally we track request IDs, but for MVP we just rely on response or manual timeout in API
+                                }
+                            }
                         }
                     }
                     _ = save_interval.tick() => {
@@ -140,40 +176,70 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                             )) => {
                                 match message {
                                     request_response::Message::Request { request, channel, .. } => {
-                                        tracing::info!("Received request for block: {}", request.block_hash);
+                                        match request {
+                                            crate::p2p::protocol::AppRequest::GetBlock { block_hash } => {
+                                                tracing::info!("Received request for block: {}", block_hash);
+                                                let data = match storage.get_chunk(&block_hash).await {
+                                                    Ok(d) => d,
+                                                    Err(e) => {
+                                                        tracing::error!("Storage error: {:?}", e);
+                                                        None
+                                                    }
+                                                };
+                                                let size = data.as_ref().map(|d| d.len()).unwrap_or(0) as u64;
+                                                let response = crate::p2p::protocol::AppResponse::Block(data);
 
-                                        // Check Ratio (Enforcement)
-                                        // In a real scenario, we would check the requester's ratio here.
-                                        // For now, we just log it.
-
-                                        let data = match storage.get_chunk(&request.block_hash).await {
-                                            Ok(d) => d,
-                                            Err(e) => {
-                                                tracing::error!("Storage error: {:?}", e);
-                                                None
+                                                if let Err(e) = swarm.behaviour_mut().request_response.send_response(channel, response) {
+                                                    tracing::error!("Failed to send response: {:?}", e);
+                                                } else if size > 0 {
+                                                    if let Err(e) = ratio_manager.record_upload(&peer.to_string(), size).await {
+                                                        tracing::error!("Failed to record upload: {:?}", e);
+                                                    }
+                                                }
                                             }
-                                        };
-
-                                        let size = data.as_ref().map(|d| d.len()).unwrap_or(0) as u64;
-                                        let response = crate::p2p::protocol::BlockResponse { data };
-
-                                        if let Err(e) = swarm.behaviour_mut().request_response.send_response(channel, response) {
-                                            tracing::error!("Failed to send response: {:?}", e);
-                                        } else if size > 0 {
-                                            // Record Upload
-                                            if let Err(e) = ratio_manager.record_upload(&peer.to_string(), size).await {
-                                                tracing::error!("Failed to record upload: {:?}", e);
+                                            crate::p2p::protocol::AppRequest::GetManga { manga_id } => {
+                                                tracing::info!("Received request for manga: {}", manga_id);
+                                                let manga = match storage.get_manga(&manga_id).await {
+                                                    Ok(m) => m,
+                                                    Err(e) => {
+                                                        tracing::error!("Storage error: {:?}", e);
+                                                        None
+                                                    }
+                                                };
+                                                let response = crate::p2p::protocol::AppResponse::Manga(manga);
+                                                if let Err(e) = swarm.behaviour_mut().request_response.send_response(channel, response) {
+                                                    tracing::error!("Failed to send response: {:?}", e);
+                                                }
                                             }
                                         }
                                     }
                                     request_response::Message::Response { response, .. } => {
-                                        let size = response.data.as_ref().map(|d| d.len()).unwrap_or(0) as u64;
-                                        tracing::info!("Received block response: {} bytes", size);
+                                        match response {
+                                            crate::p2p::protocol::AppResponse::Block(data) => {
+                                                let size = data.as_ref().map(|d| d.len()).unwrap_or(0) as u64;
+                                                tracing::info!("Received block response: {} bytes", size);
+                                                if size > 0 {
+                                                    if let Err(e) = ratio_manager.record_download(&peer.to_string(), size).await {
+                                                        tracing::error!("Failed to record download: {:?}", e);
+                                                    }
+                                                }
+                                            }
+                                            crate::p2p::protocol::AppResponse::Manga(Some(manga)) => {
+                                                tracing::info!("Received manga metadata: {}", manga.title);
+                                                // Resolve pending requests
+                                                if let Some(waiters) = pending_manga_requests.remove(&manga.id) {
+                                                    // We only need to send to one, but let's send to all for now (or just the first and drop others)
+                                                    // Actually, we should clone the result to all
+                                                    for tx in waiters {
+                                                        let _ = tx.send(Some(manga.clone()));
+                                                    }
+                                                }
 
-                                        if size > 0 {
-                                            // Record Download
-                                            if let Err(e) = ratio_manager.record_download(&peer.to_string(), size).await {
-                                                tracing::error!("Failed to record download: {:?}", e);
+                                                // Save to local storage?
+                                                // For now, we return it to API, API can decide to save.
+                                            }
+                                            crate::p2p::protocol::AppResponse::Manga(None) => {
+                                                tracing::info!("Peer did not have the manga");
                                             }
                                         }
                                     }

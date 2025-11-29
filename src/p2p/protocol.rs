@@ -1,11 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BlockRequest {
-    pub block_hash: String,
+pub enum AppRequest {
+    GetBlock { block_hash: String },
+    GetManga { manga_id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BlockResponse {
-    pub data: Option<Vec<u8>>, // None if not found
+pub enum AppResponse {
+    Block(Option<Vec<u8>>),
+    Manga(Option<crate::storage::models::MangaMetadata>),
 }

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, PartialEq, Eq, Clone)]
 pub struct MangaMetadata {
     pub id: String,
     pub title: String,
