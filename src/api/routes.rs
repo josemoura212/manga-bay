@@ -24,6 +24,7 @@ pub fn create_router(storage: Storage, cmd_tx: mpsc::Sender<NodeCommand>) -> Rou
         .route("/image/{hash}", get(image::get_image))
         // Node routes
         .route("/node", get(node::get_node_info))
+        .route("/node/discover", post(node::discover_peers))
         .route("/peer", post(node::connect_peer))
         .with_state(state)
 }

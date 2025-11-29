@@ -65,3 +65,22 @@ pub async fn connect_peer(
         )),
     }
 }
+
+pub async fn discover_peers(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let (tx, rx) = oneshot::channel();
+    state
+        .cmd_tx
+        .send(NodeCommand::DiscoverPeers(tx))
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to send command to node".to_string()))?;
+
+    let count = rx.await.map_err(|_| {
+        AppError::InternalServerError("Failed to receive response from node".to_string())
+    })?;
+
+    Ok(Json(
+        serde_json::json!({ "status": "ok", "peers_queried": count }),
+    ))
+}

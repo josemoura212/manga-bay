@@ -7,6 +7,7 @@ pub enum AppRequest {
     GetChapters { manga_id: String },
     GetChapterDetails { chapter_id: String },
     GetVersion { manga_id: String },
+    GetPeers,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -16,4 +17,5 @@ pub enum AppResponse {
     Chapters(Vec<manga_bay_common::models::ChapterMetadata>),
     ChapterDetails(Option<manga_bay_common::models::ChapterDetails>),
     Version(Option<manga_bay_common::models::MangaVersion>),
+    Peers(Vec<String>),
 }

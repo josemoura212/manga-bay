@@ -6,6 +6,7 @@ use libp2p::{
     SwarmBuilder,
 };
 use manga_bay_storage::Storage;
+use std::collections::HashSet;
 use std::time::Duration;
 
 use tokio::select;
@@ -40,6 +41,7 @@ pub enum NodeCommand {
         String,
         oneshot::Sender<Vec<manga_bay_common::models::MangaVersion>>,
     ),
+    DiscoverPeers(oneshot::Sender<usize>),
 }
 
 pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> Result<()> {
@@ -234,6 +236,18 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                                     }
                                 }
                             }
+                            NodeCommand::DiscoverPeers(reply) => {
+                                let connected_peers: Vec<_> = swarm.connected_peers().cloned().collect();
+                                let count = connected_peers.len();
+                                if !connected_peers.is_empty() {
+                                    tracing::info!("Asking {} peers for their known peers", count);
+                                    let req = manga_bay_p2p::protocol::AppRequest::GetPeers;
+                                    for peer in &connected_peers {
+                                        swarm.behaviour_mut().request_response.send_request(peer, req.clone());
+                                    }
+                                }
+                                let _ = reply.send(count);
+                            }
                         }
                     }
                     _ = save_interval.tick() => {
@@ -385,6 +399,20 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                                                     tracing::error!("Failed to send response: {:?}", e);
                                                 }
                                             }
+                                            manga_bay_p2p::protocol::AppRequest::GetPeers => {
+                                                tracing::info!("Received request for known peers");
+                                                // Collect connected peers and known peers
+                                                // Collect connected peers and known peers
+                                                let peers: HashSet<String> = node_state.known_peers.iter().map(|a| a.to_string()).collect();
+                                                // We could also add connected peers if we tracked their multiaddrs associated with PeerId
+
+                                                // Just send what we have in known_peers
+                                                let peer_list: Vec<String> = peers.into_iter().collect();
+                                                let response = manga_bay_p2p::protocol::AppResponse::Peers(peer_list);
+                                                if let Err(e) = swarm.behaviour_mut().request_response.send_response(channel, response) {
+                                                    tracing::error!("Failed to send response: {:?}", e);
+                                                }
+                                            }
                                         }
                                     }
                                     request_response::Message::Response { response, .. } => {
@@ -447,6 +475,22 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                                             }
                                             manga_bay_p2p::protocol::AppResponse::Version(None) => {
                                                 tracing::info!("Peer did not have the manga version");
+                                            }
+                                            manga_bay_p2p::protocol::AppResponse::Peers(peers) => {
+                                                tracing::info!("Received {} peers from discovery", peers.len());
+                                                for p in peers {
+                                                    if let Ok(addr) = p.parse::<Multiaddr>() {
+                                                        if !node_state.known_peers.contains(&addr) {
+                                                            tracing::info!("Discovered new peer: {}", addr);
+                                                            node_state.known_peers.push(addr.clone());
+                                                            // Also add to Kademlia if we had the peer_id, but here we only have multiaddr.
+                                                            // We can try to dial it.
+                                                            if swarm.dial(addr).is_ok() {
+                                                                tracing::info!("Dialing discovered peer...");
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
