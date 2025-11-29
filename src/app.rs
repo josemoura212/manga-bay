@@ -73,7 +73,18 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                     "/manga-bay/1.0.0".into(),
                     key.public(),
                 )),
-                mdns: mdns::tokio::Behaviour::new(mdns::Config::default(), peer_id)?,
+                mdns: libp2p::swarm::behaviour::toggle::Toggle::from(
+                    match mdns::tokio::Behaviour::new(mdns::Config::default(), peer_id) {
+                        Ok(m) => Some(m),
+                        Err(e) => {
+                            tracing::warn!(
+                                "mDNS failed to start (likely due to server environment): {}",
+                                e
+                            );
+                            None
+                        }
+                    },
+                ),
                 request_response: request_response::cbor::Behaviour::new(
                     [(
                         libp2p::StreamProtocol::new("/manga-bay/req/1.0.0"),
@@ -85,9 +96,11 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
         })?
         .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
         .build();
+    tracing::info!("Swarm built successfully");
 
     // 5. Listen
     swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{}", port + 1).parse()?)?;
+    tracing::info!("Swarm listening on port {}", port + 1);
 
     // 6. Bootstrap
     let persistence = crate::discovery::PeerPersistence::new(&storage.data_dir);
@@ -121,18 +134,17 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
     let (cmd_tx, mut cmd_rx) = mpsc::channel(32);
 
     // 9. Run Loop
-    let _api_server = crate::api::server::serve(port, storage.clone(), cmd_tx.clone());
-    let mut _save_interval = tokio::time::interval(Duration::from_secs(60)); // Save peers every minute
-
     let mut node_state = crate::events::NodeState::new();
     node_state.known_peers = known_peers;
 
-    // 9. Run Loop
     let api_server = crate::api::server::serve(port, storage.clone(), cmd_tx);
     let mut save_interval = tokio::time::interval(Duration::from_secs(60)); // Save peers every minute
 
+    tracing::info!("Starting run loop...");
     select! {
-        _ = api_server => {},
+        res = api_server => {
+            tracing::error!("API server exited: {:?}", res);
+        },
         _ = async {
             loop {
                 select! {

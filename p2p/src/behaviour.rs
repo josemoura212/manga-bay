@@ -5,7 +5,7 @@ pub struct MangaBehaviour {
     pub gossipsub: gossipsub::Behaviour,
     pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
     pub identify: identify::Behaviour,
-    pub mdns: mdns::tokio::Behaviour,
+    pub mdns: libp2p::swarm::behaviour::toggle::Toggle<mdns::tokio::Behaviour>,
     pub request_response: request_response::cbor::Behaviour<
         crate::protocol::AppRequest,
         crate::protocol::AppResponse,
