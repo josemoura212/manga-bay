@@ -16,6 +16,7 @@ use tokio::sync::{mpsc, oneshot};
 pub struct NodeInfo {
     pub peer_id: String,
     pub listeners: Vec<String>,
+    pub connected_peers: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -123,9 +124,11 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                         match cmd {
                             NodeCommand::GetNodeInfo(reply) => {
                                 let listeners: Vec<String> = swarm.listeners().map(|a| a.to_string()).collect();
+                                let connected_peers: Vec<String> = swarm.connected_peers().map(|p| p.to_string()).collect();
                                 let info = NodeInfo {
                                     peer_id: local_peer_id.to_string(),
                                     listeners,
+                                    connected_peers,
                                 };
                                 let _ = reply.send(info);
                             }

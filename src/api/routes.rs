@@ -67,6 +67,7 @@ async fn health_check() -> &'static str {
 struct NodeInfoResponse {
     peer_id: String,
     listeners: Vec<String>,
+    connected_peers: Vec<String>,
 }
 
 async fn get_node_info(State(state): State<AppState>) -> Result<Json<NodeInfoResponse>, AppError> {
@@ -83,6 +84,7 @@ async fn get_node_info(State(state): State<AppState>) -> Result<Json<NodeInfoRes
     Ok(Json(NodeInfoResponse {
         peer_id: info.peer_id,
         listeners: info.listeners,
+        connected_peers: info.connected_peers,
     }))
 }
 
