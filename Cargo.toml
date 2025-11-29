@@ -1,26 +1,70 @@
 [package]
 name = "manga-bay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[workspace]
+members = ["common", "storage", "p2p"]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
-[dependencies]
+[workspace.dependencies]
 tokio = { version = "1.36", features = ["full"] }
-axum = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0"
-clap = { version = "4.5", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio", "tls-native-tls"] }
+sqlx = { version = "0.8.2", features = [
+    "sqlite",
+    "runtime-tokio",
+    "tls-native-tls",
+] }
 sha2 = "0.10"
 hex = "0.4"
-uuid = { version = "1.0", features = ["v4", "serde"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-base64 = "0.21"
-libp2p = { version = "0.53", features = ["tokio", "gossipsub", "mdns", "noise", "macros", "tcp", "yamux", "quic", "dns", "kad", "identify", "request-response", "cbor"] }
-sysinfo = "0.30"
-zip = "0.6"
-bytes = "1.5"
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+base64 = "0.22.1"
+libp2p = { version = "0.56.0", features = [
+    "tokio",
+    "gossipsub",
+    "mdns",
+    "noise",
+    "macros",
+    "tcp",
+    "yamux",
+    "quic",
+    "dns",
+    "kad",
+    "identify",
+    "request-response",
+    "cbor",
+] }
+bytes = "1.9"
+
+[dependencies]
+manga-bay-common = { path = "common" }
+manga-bay-storage = { path = "storage" }
+manga-bay-p2p = { path = "p2p" }
+
+clap = { version = "4.5", features = ["derive"] }
+sysinfo = "0.37.2"
+serde.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+axum = "0.8.1"
+tower = "0.5.1"
+tower-http = { version = "0.6.2", features = ["cors", "trace"] }
+serde_json.workspace = true
+base64.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+libp2p.workspace = true

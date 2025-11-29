@@ -1,0 +1,15 @@
+[package]
+name = "manga-bay-common"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+libp2p.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+sqlx.workspace = true
+sha2.workspace = true
+hex.workspace = true

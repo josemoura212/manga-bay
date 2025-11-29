@@ -1,9 +1,4 @@
 #![allow(unused)]
-mod api;
-mod node;
-mod p2p;
-mod storage;
-mod utils;
 
 use anyhow::Result;
 use clap::Parser;
@@ -37,8 +32,8 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     tracing::info!("Starting Manga Bay Node on port {}", args.port);
 
-    let storage = storage::engine::Storage::new(&args.data_dir).await?;
-    node::app::run(args.port, storage, args.bootstrap_peers).await?;
+    let storage = manga_bay_storage::Storage::new(&args.data_dir).await?;
+    manga_bay::app::run(args.port, storage, args.bootstrap_peers).await?;
 
     Ok(())
 }

@@ -34,7 +34,7 @@ impl ResourceManager {
                 // Scope for system lock
                 {
                     let mut sys = system.lock().unwrap();
-                    sys.refresh_process(pid);
+                    sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
 
                     if let Some(process) = sys.process(pid) {
                         // Check CPU (Process usage / Total Cores)

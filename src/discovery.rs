@@ -1,5 +1,6 @@
 use anyhow::Result;
-use libp2p::{Multiaddr, PeerId};
+use libp2p::Multiaddr;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;

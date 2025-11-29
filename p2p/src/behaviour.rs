@@ -7,7 +7,7 @@ pub struct MangaBehaviour {
     pub identify: identify::Behaviour,
     pub mdns: mdns::tokio::Behaviour,
     pub request_response: request_response::cbor::Behaviour<
-        crate::p2p::protocol::AppRequest,
-        crate::p2p::protocol::AppResponse,
+        crate::protocol::AppRequest,
+        crate::protocol::AppResponse,
     >,
 }

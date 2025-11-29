@@ -1,0 +1,13 @@
+[package]
+name = "manga-bay-p2p"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+manga-bay-common = { path = "../common" }
+manga-bay-storage = { path = "../storage" }
+libp2p.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+serde.workspace = true
