@@ -14,7 +14,7 @@ pub enum AppRequest {
 pub enum AppResponse {
     Block(String, Option<Vec<u8>>),
     Manga(Option<manga_bay_common::models::MangaMetadata>),
-    Chapters(Vec<manga_bay_common::models::ChapterMetadata>),
+    Chapters(String, Vec<manga_bay_common::models::ChapterMetadata>),
     ChapterDetails(Option<manga_bay_common::models::ChapterDetails>),
     Version(Option<manga_bay_common::models::MangaVersion>),
     Peers(Vec<String>),

@@ -378,7 +378,7 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                                                         Vec::new()
                                                     }
                                                 };
-                                                let response = manga_bay_p2p::protocol::AppResponse::Chapters(chapters);
+                                                let response = manga_bay_p2p::protocol::AppResponse::Chapters(manga_id, chapters);
                                                 if let Err(e) = swarm.behaviour_mut().request_response.send_response(channel, response) {
                                                     tracing::error!("Failed to send response: {:?}", e);
                                                 }
@@ -455,14 +455,11 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                                             manga_bay_p2p::protocol::AppResponse::Manga(None) => {
                                                 tracing::info!("Peer did not have the manga");
                                             }
-                                            manga_bay_p2p::protocol::AppResponse::Chapters(chapters) => {
-                                                tracing::info!("Received {} chapters", chapters.len());
-                                                if !chapters.is_empty() {
-                                                    let manga_id = chapters[0].manga_id.clone();
-                                                    if let Some(waiters) = node_state.pending_chapters_requests.remove(&manga_id) {
-                                                        for tx in waiters {
-                                                            let _ = tx.send(chapters.clone());
-                                                        }
+                                            manga_bay_p2p::protocol::AppResponse::Chapters(manga_id, chapters) => {
+                                                tracing::info!("Received {} chapters for {}", chapters.len(), manga_id);
+                                                if let Some(waiters) = node_state.pending_chapters_requests.remove(&manga_id) {
+                                                    for tx in waiters {
+                                                        let _ = tx.send(chapters.clone());
                                                     }
                                                 }
                                             }
