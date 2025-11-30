@@ -13,5 +13,6 @@ pub struct MangaBehaviour {
         crate::protocol::AppResponse,
     >,
     pub relay: relay::client::Behaviour,
+    pub relay_server: relay::Behaviour,
     pub dcutr: dcutr::Behaviour,
 }

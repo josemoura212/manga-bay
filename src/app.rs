@@ -1,9 +1,10 @@
 use anyhow::Result;
 use libp2p::futures::StreamExt;
 use libp2p::identity;
+use libp2p::multiaddr::Protocol;
 use libp2p::{
-    dcutr, gossipsub, identify, kad, mdns, noise, request_response, tcp, yamux, Multiaddr, PeerId,
-    SwarmBuilder,
+    dcutr, gossipsub, identify, kad, mdns, noise, relay, request_response, tcp, yamux, Multiaddr,
+    PeerId, SwarmBuilder,
 };
 use manga_bay_storage::Storage;
 use std::collections::HashSet;
@@ -94,6 +95,7 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                     request_response::Config::default(),
                 ),
                 relay: relay_client,
+                relay_server: relay::Behaviour::new(peer_id, relay::Config::default()),
                 dcutr: dcutr::Behaviour::new(peer_id),
             })
         })?
@@ -283,9 +285,9 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                                     libp2p::core::ConnectedPoint::Listener { send_back_addr, .. } => Some(send_back_addr),
                                 };
 
-                                if let Some(addr) = addr {
-                                    if !node_state.known_peers.contains(&addr) {
-                                        node_state.known_peers.push(addr);
+                                if let Some(addr_val) = &addr {
+                                    if !node_state.known_peers.contains(addr_val) {
+                                        node_state.known_peers.push(addr_val.clone());
                                     }
                                 }
                                 // Check if we have pending requests
@@ -324,6 +326,30 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                                 // Auto-discovery: Ask new peer for their known peers
                                 tracing::info!("Asking new peer {} for their known peers", peer_id);
                                 swarm.behaviour_mut().request_response.send_request(&peer_id, manga_bay_p2p::protocol::AppRequest::GetPeers);
+
+                                // Enable Relay Listening if this is a bootstrap peer (or any peer really, but let's be safe)
+                                // We construct the relay address: <PeerAddr>/p2p-circuit
+                                if let Some(addr_val) = &addr {
+                                    // Check if address already has p2p-circuit
+                                    if !addr_val.iter().any(|p| matches!(p, Protocol::P2pCircuit)) {
+                                        let relay_addr = addr_val.clone().with(Protocol::P2pCircuit);
+                                        tracing::info!("Attempting to listen on relay address: {}", relay_addr);
+                                        if let Err(e) = swarm.listen_on(relay_addr) {
+                                            tracing::warn!("Failed to listen on relay address: {}", e);
+                                        }
+                                    }
+                                }
+                            }
+                            libp2p::swarm::SwarmEvent::Behaviour(manga_bay_p2p::behaviour::MangaBehaviourEvent::Identify(
+                                identify::Event::Received { peer_id, info, .. }
+                            )) => {
+                                tracing::info!("Received Identify from {}: protocols={:?}", peer_id, info.protocols);
+                                for addr in info.listen_addrs {
+                                    swarm.behaviour_mut().kademlia.add_address(&peer_id, addr.clone());
+                                    if !node_state.known_peers.contains(&addr) {
+                                        node_state.known_peers.push(addr);
+                                    }
+                                }
                             }
                             libp2p::swarm::SwarmEvent::Behaviour(manga_bay_p2p::behaviour::MangaBehaviourEvent::Mdns(
                                 mdns::Event::Discovered(list)
@@ -512,7 +538,13 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                                     }
                                 }
                             }
-                            event => tracing::info!("Swarm Event: {:?}", event),
+                            libp2p::swarm::SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                                tracing::debug!("Failed to dial {:?}: {:?}", peer_id, error);
+                            }
+                            libp2p::swarm::SwarmEvent::IncomingConnectionError { local_addr, send_back_addr, error, .. } => {
+                                tracing::debug!("Incoming connection failed from {} to {}: {:?}", send_back_addr, local_addr, error);
+                            }
+                            event => tracing::debug!("Swarm Event: {:?}", event),
                         }
                     }
                 }
