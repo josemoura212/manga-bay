@@ -44,6 +44,8 @@ libp2p = { version = "0.56.0", features = [
     "identify",
     "request-response",
     "cbor",
+    "relay",
+    "dcutr",
 ] }
 bytes = "1.9"
 

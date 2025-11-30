@@ -2,7 +2,7 @@ use anyhow::Result;
 use libp2p::futures::StreamExt;
 use libp2p::identity;
 use libp2p::{
-    gossipsub, identify, kad, mdns, noise, request_response, tcp, yamux, Multiaddr, PeerId,
+    dcutr, gossipsub, identify, kad, mdns, noise, request_response, tcp, yamux, Multiaddr, PeerId,
     SwarmBuilder,
 };
 use manga_bay_storage::Storage;
@@ -60,7 +60,8 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
         )?
         .with_quic()
         .with_dns()?
-        .with_behaviour(|key| {
+        .with_relay_client(noise::Config::new, yamux::Config::default)?
+        .with_behaviour(|key, relay_client| {
             let peer_id = PeerId::from(key.public());
             Ok(manga_bay_p2p::behaviour::MangaBehaviour {
                 gossipsub: gossipsub::Behaviour::new(
@@ -92,6 +93,8 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                     )],
                     request_response::Config::default(),
                 ),
+                relay: relay_client,
+                dcutr: dcutr::Behaviour::new(peer_id),
             })
         })?
         .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
@@ -317,6 +320,10 @@ pub async fn run(port: u16, storage: Storage, bootstrap_peers: Vec<String>) -> R
                                         swarm.behaviour_mut().request_response.send_request(&peer_id, req);
                                     }
                                 }
+
+                                // Auto-discovery: Ask new peer for their known peers
+                                tracing::info!("Asking new peer {} for their known peers", peer_id);
+                                swarm.behaviour_mut().request_response.send_request(&peer_id, manga_bay_p2p::protocol::AppRequest::GetPeers);
                             }
                             libp2p::swarm::SwarmEvent::Behaviour(manga_bay_p2p::behaviour::MangaBehaviourEvent::Mdns(
                                 mdns::Event::Discovered(list)

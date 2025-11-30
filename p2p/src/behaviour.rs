@@ -1,4 +1,6 @@
-use libp2p::{gossipsub, identify, kad, mdns, request_response, swarm::NetworkBehaviour};
+use libp2p::{
+    dcutr, gossipsub, identify, kad, mdns, relay, request_response, swarm::NetworkBehaviour,
+};
 
 #[derive(NetworkBehaviour)]
 pub struct MangaBehaviour {
@@ -10,4 +12,6 @@ pub struct MangaBehaviour {
         crate::protocol::AppRequest,
         crate::protocol::AppResponse,
     >,
+    pub relay: relay::client::Behaviour,
+    pub dcutr: dcutr::Behaviour,
 }
